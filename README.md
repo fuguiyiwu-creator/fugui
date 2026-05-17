@@ -53,3 +53,15 @@ python -m myinvois_sdk
 ## API 文档
 
 官方 SDK 文档：https://sdk.myinvois.hasil.gov.my/
+
+## 环境变量设置（Vercel 部署）
+
+| 变量 | 值 |
+|------|-----|
+| `MYINVOIS_CLIENT_ID` | `4d22546d-b2c4-420b-b542-893ab9cbebbb` |
+| `MYINVOIS_CLIENT_SECRET` | 用 **Secret 1** (`36d6db2f...`)，轮换时切 Secret 2 |
+| `MYINVOIS_TIN` | `C60122406100` |
+| `MYINVOIS_ENV` | `prod`（测试）/ `prod`（正式） |
+
+> 本地测试：复制 `config/settings_local.py` 填入真实值
+> 注意：`config/settings_local.py` 已加入 `.gitignore`，不会提交到仓库
