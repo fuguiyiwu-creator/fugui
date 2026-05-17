@@ -265,7 +265,7 @@ export default function Home() {
           <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
             <h2 className="text-base font-semibold text-gray-800 flex items-center gap-2">
               <span>📋</span> 发票管理
-              {!loading && allDocs.length > 0 && (
+              {allDocs.length > 0 && (
                 <span className="text-xs font-normal text-gray-400">（第 {page}/{totalPages} 页）</span>
               )}
             </h2>
