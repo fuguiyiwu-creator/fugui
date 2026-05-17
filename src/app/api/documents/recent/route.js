@@ -13,10 +13,8 @@ async function getToken() {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams({
-      client_id: clientId,
-      client_secret: secret,
-      grant_type: "client_credentials",
-      scope: "InvoicingAPI",
+      client_id: clientId, client_secret: secret,
+      grant_type: "client_credentials", scope: "InvoicingAPI",
     }),
   });
   const data = await r.json();
@@ -28,16 +26,24 @@ export async function POST(req) {
     const { token, env } = await getToken();
     const body = await req.json().catch(() => ({}));
 
-    // 支持分页和筛选
-    const pageSize = body.pageSize || 10;
-    const pageNo = body.pageNo || 1;
+    const params = new URLSearchParams();
+    if (body.pageSize) params.append("pageSize", body.pageSize);
+    if (body.pageNo) params.append("pageNo", body.pageNo);
 
-    const r = await fetch(
-      `${API_URLS[env]}/api/v1.0/documents/recent?pageSize=${pageSize}&pageNo=${pageNo}`,
-      {
-        headers: { Authorization: `Bearer ${token}` },
-      }
-    );
+    // API 使用英文状态值
+    const statusMap = { "1": "Submitted", "2": "Valid", "3": "Invalid", "4": "Cancelled" };
+    if (body.status && statusMap[body.status]) params.append("status", statusMap[body.status]);
+
+    // API 参数名 InvoiceDirection，值 Sent/Received
+    if (body.direction) {
+      const dir = body.direction === "sender" ? "Sent" : body.direction === "receiver" ? "Received" : body.direction;
+      params.append("InvoiceDirection", dir);
+    }
+
+    const qs = params.toString();
+    const url = `${API_URLS[env]}/api/v1.0/documents/recent${qs ? "?" + qs : ""}`;
+
+    const r = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
 
     if (!r.ok) {
       const err = await r.text();

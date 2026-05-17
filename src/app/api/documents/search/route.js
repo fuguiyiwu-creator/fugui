@@ -13,10 +13,8 @@ async function getToken() {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams({
-      client_id: clientId,
-      client_secret: secret,
-      grant_type: "client_credentials",
-      scope: "InvoicingAPI",
+      client_id: clientId, client_secret: secret,
+      grant_type: "client_credentials", scope: "InvoicingAPI",
     }),
   });
   const data = await r.json();
@@ -28,22 +26,38 @@ export async function POST(req) {
     const body = await req.json();
     const { token, env } = await getToken();
 
-    // Build query params
     const params = new URLSearchParams();
-    if (body.status) params.append("status", body.status);
-    if (body.dateFrom) params.append("dateFrom", body.dateFrom);
-    if (body.dateTo) params.append("dateTo", body.dateTo);
-    if (body.tin) params.append("tin", body.tin);
+
+    // Search API 强制需要日期范围，默认最近7天
+    const now = new Date();
+    const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+
+    if (body.dateFrom) {
+      params.append("submissionDateFrom", body.dateFrom + "T00:00:00Z");
+      params.append("submissionDateTo", (body.dateTo || now.toISOString().split("T")[0]) + "T23:59:59Z");
+    } else {
+      // 默认近7天
+      params.append("submissionDateFrom", sevenDaysAgo.toISOString());
+      params.append("submissionDateTo", now.toISOString());
+    }
+
     if (body.pageSize) params.append("pageSize", body.pageSize);
     if (body.pageNo) params.append("pageNo", body.pageNo);
-    if (body.direction) params.append("direction", body.direction); // sender/receiver
+
+    // 状态值映射
+    const statusMap = { "1": "Submitted", "2": "Valid", "3": "Invalid", "4": "Cancelled" };
+    if (body.status && statusMap[body.status]) params.append("status", statusMap[body.status]);
+
+    // 方向
+    if (body.direction) {
+      const dir = body.direction === "sender" ? "Sent" : body.direction === "receiver" ? "Received" : body.direction;
+      params.append("invoiceDirection", dir);
+    }
 
     const qs = params.toString();
     const url = `${API_URLS[env]}/api/v1.0/documents/search${qs ? "?" + qs : ""}`;
 
-    const r = await fetch(url, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
+    const r = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
 
     if (!r.ok) {
       const err = await r.text();
