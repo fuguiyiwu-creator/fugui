@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useRef } from "react";
 
 const STORAGE_KEY = "myinvois_cache";
 const USER_TIN = "C60122406100";
@@ -9,13 +9,13 @@ export default function Home() {
   const [env, setEnv] = useState("prod");
   const [allDocs, setAllDocs] = useState([]);
   const [displayDocs, setDisplayDocs] = useState([]);
-  const [loading, setLoading] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [error, setError] = useState("");
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(0);
   const [lastSync, setLastSync] = useState(null);
   const [stats, setStats] = useState({ cached: 0, new: 0, total: 0 });
+  const docsRef = useRef([]);
   const pageSize = 15;
 
   const [filters, setFilters] = useState({ dateFrom: "", dateTo: "", status: "", keyword: "" });
@@ -31,7 +31,9 @@ export default function Home() {
       const cached = localStorage.getItem(STORAGE_KEY);
       if (cached) {
         const data = JSON.parse(cached);
-        setAllDocs(data.docs || []);
+        const docs = data.docs || [];
+        docsRef.current = docs;
+        setAllDocs(docs);
         setLastSync(data.syncTime || null);
       }
     } catch {}
@@ -58,12 +60,13 @@ export default function Home() {
     setDisplayDocs(filtered.slice(start, start + pageSize));
   }, [allDocs, filters, page]);
 
-  // 同步数据
-  const syncData = useCallback(async () => {
+  // 同步数据：从 2026-01-01 拉取，按 UUID 去重
+  async function syncData() {
     setSyncing(true);
     setError("");
     let newCount = 0;
-    const allUuids = new Set(allDocs.map(d => d.uuid));
+    const existing = docsRef.current;
+    const existingUuids = new Set(existing.map(d => d.uuid));
 
     try {
       let pageNo = 1;
@@ -84,31 +87,32 @@ export default function Home() {
         if (!data.result?.length) break;
 
         for (const doc of data.result) {
-          if (!allUuids.has(doc.uuid)) {
-            allDocs.push(doc);
-            allUuids.add(doc.uuid);
+          if (!existingUuids.has(doc.uuid)) {
+            existing.push(doc);
+            existingUuids.add(doc.uuid);
             newCount++;
           }
         }
 
-        const totalPages = data.metadata?.totalPages || 1;
-        hasMore = pageNo < totalPages;
+        const total = data.metadata?.totalPages || 1;
+        hasMore = pageNo < total;
         pageNo++;
       }
 
-      // 存本地
-      const newData = { docs: allDocs, syncTime: new Date().toISOString() };
+      const finalDocs = [...existing];
+      const newData = { docs: finalDocs, syncTime: new Date().toISOString() };
       localStorage.setItem(STORAGE_KEY, JSON.stringify(newData));
-      setAllDocs([...allDocs]);
+      docsRef.current = finalDocs;
+      setAllDocs(finalDocs);
       setLastSync(newData.syncTime);
-      setStats({ cached: allDocs.length - newCount, new: newCount, total: allDocs.length });
+      setStats({ cached: finalDocs.length - newCount, new: newCount, total: finalDocs.length });
       setPage(1);
     } catch (e) {
       setError(e.message);
     } finally {
       setSyncing(false);
     }
-  }, [allDocs]);
+  }
 
   // 判断方向
   const getDirection = (doc) => {
@@ -265,7 +269,7 @@ export default function Home() {
                 <span className="text-xs font-normal text-gray-400">（第 {page}/{totalPages} 页）</span>
               )}
             </h2>
-            <button onClick={() => { setAllDocs([]); setDisplayDocs([]); localStorage.removeItem(STORAGE_KEY); setStats({ cached: 0, new: 0, total: 0 }); setLastSync(null); }}
+            <button onClick={() => { docsRef.current = []; setAllDocs([]); localStorage.removeItem(STORAGE_KEY); setStats({ cached: 0, new: 0, total: 0 }); setLastSync(null); }}
               className="text-xs text-gray-400 hover:text-red-500 transition px-2 py-1 rounded-lg hover:bg-red-50">
               清除缓存
             </button>
