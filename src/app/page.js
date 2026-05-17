@@ -2,34 +2,21 @@
 import { useState, useEffect } from "react";
 
 export default function Home() {
-  const [tab, setTab] = useState("submit");
-  const [env, setEnv] = useState("sandbox");
   const [configOk, setConfigOk] = useState(false);
-  const [tokenInfo, setTokenInfo] = useState(null);
-  const [tinInfo, setTinInfo] = useState(null);
-  const [tinInput, setTinInput] = useState("");
-  const [submitting, setSubmitting] = useState(false);
-  const [result, setResult] = useState(null);
+  const [env, setEnv] = useState("prod");
+  const [docs, setDocs] = useState(null);
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [pollId, setPollId] = useState("");
-  const [pollResult, setPollResult] = useState(null);
+  const [page, setPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(0);
+  const pageSize = 15;
 
-  // ── 发票查询 ──
-  const [recentDocs, setRecentDocs] = useState(null);
-  const [docLoading, setDocLoading] = useState(false);
-  const [searchForm, setSearchForm] = useState({ status: "", dateFrom: "", dateTo: "", tin: "", direction: "" });
-  const [docDetail, setDocDetail] = useState(null);
-  const [docUuid, setDocUuid] = useState("");
-
-  // ── 表单数据 ──
-  const [form, setForm] = useState({
-    supplierTin: "",
-    supplierName: "",
-    buyerTin: "",
-    buyerName: "",
-    invoiceNo: `SB-${Date.now()}`,
-    issueDate: new Date().toISOString().split("T")[0],
-    lines: [{ description: "", quantity: 1, unitPrice: 0, taxRate: 0.08 }],
+  // 筛选条件
+  const [filters, setFilters] = useState({
+    dateFrom: "",
+    dateTo: "",
+    status: "",
+    keyword: "",
   });
 
   useEffect(() => {
@@ -39,399 +26,289 @@ export default function Home() {
     });
   }, []);
 
-  // ── 测试 Token ──
-  async function testToken() {
-    setError(""); setTokenInfo(null);
-    const r = await fetch("/api/token", { method: "POST" });
-    const d = await r.json();
-    if (d.error) return setError(d.error);
-    setTokenInfo(d);
-  }
-
-  // ── 验证 TIN ──
-  async function verifyTin() {
-    setError(""); setTinInfo(null);
-    const r = await fetch("/api/verify-tin", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ tin: tinInput }),
-    });
-    const d = await r.json();
-    if (d.error) return setError(d.error);
-    setTinInfo(d);
-  }
-
-  // ── 提交发票 ──
-  async function submitInvoice() {
-    setError(""); setResult(null); setSubmitting(true);
+  async function loadDocs(pageNo = 1) {
+    setLoading(true);
+    setError("");
+    setPage(pageNo);
     try {
-      const r = await fetch("/api/submit", {
+      const body = { pageSize, pageNo };
+      if (filters.dateFrom) {
+        body.dateFrom = filters.dateFrom;
+        body.dateTo = filters.dateTo || new Date().toISOString().split("T")[0];
+      }
+      if (filters.status) body.status = filters.status;
+      if (filters.keyword) body.keyword = filters.keyword;
+
+      const r = await fetch("/api/documents/recent", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(form),
+        body: JSON.stringify(body),
       });
       const d = await r.json();
       if (d.error) return setError(d.error);
-      setResult(d);
-      setPollId(d.submissionUID || "");
+      setDocs(d);
+      setTotalPages(d.metadata?.totalPages || 1);
+    } catch (e) {
+      setError(e.message);
     } finally {
-      setSubmitting(false);
+      setLoading(false);
     }
   }
 
-  // ── 轮询状态 ──
-  async function pollStatus() {
-    if (!pollId) return;
-    setError(""); setPollResult(null);
-    const r = await fetch("/api/status", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ submissionId: pollId }),
-    });
-    const d = await r.json();
-    if (d.error) return setError(d.error);
-    setPollResult(d);
-  }
+  // 格式化金额
+  const fmt = (v) => v != null ? `MYR ${Number(v).toLocaleString("en", { minimumFractionDigits: 2 })}` : "-";
 
-  function addLine() {
-    setForm(f => ({ ...f, lines: [...f.lines, { description: "", quantity: 1, unitPrice: 0, taxRate: 0.08 }] }));
-  }
+  // 格式化日期
+  const fmtDate = (dt) => dt ? new Date(dt).toLocaleString("zh-CN", {
+    year: "numeric", month: "2-digit", day: "2-digit",
+    hour: "2-digit", minute: "2-digit",
+    timeZone: "Asia/Kuala_Lumpur"
+  }) : "-";
 
-  function updLine(i, field, val) {
-    const lines = [...form.lines];
-    lines[i][field] = val;
-    setForm(f => ({ ...f, lines }));
-  }
+  const statusColor = (s) => {
+    switch (s) {
+      case "Valid": return "bg-emerald-50 text-emerald-700 border-emerald-200";
+      case "Submitted": return "bg-amber-50 text-amber-700 border-amber-200";
+      case "Invalid": return "bg-red-50 text-red-700 border-red-200";
+      case "Cancelled": return "bg-gray-50 text-gray-500 border-gray-200";
+      default: return "bg-gray-50 text-gray-600 border-gray-200";
+    }
+  };
 
-  function delLine(i) {
-    setForm(f => ({ ...f, lines: f.lines.filter((_, idx) => idx !== i) }));
-  }
+  const statusLabel = (s) => {
+    switch (s) {
+      case "Valid": return "有效";
+      case "Submitted": return "待验证";
+      case "Invalid": return "无效";
+      case "Cancelled": return "已取消";
+      default: return s;
+    }
+  };
 
-  // ── 渲染 ──
   return (
-    <div className="max-w-5xl mx-auto p-4 md:p-8">
-      {/* Header */}
-      <div className="flex items-center justify-between mb-8">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-800">富贵 MyInvois</h1>
-          <p className="text-sm text-gray-500">LHDN 电子发票自动提交系统</p>
-        </div>
-        <span className={`px-3 py-1 rounded-full text-xs font-medium ${configOk ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700"}`}>
-          {env.toUpperCase()} {configOk ? "已配置" : "未配置"}
-        </span>
-      </div>
-
-      {/* Tabs */}
-      <div className="flex gap-1 mb-6 border-b">
-        {[
-          { k: "submit", label: "📄 提交发票" },
-          { k: "tools", label: "🔧 检测工具" },
-          { k: "status", label: "📊 查询状态" },
-          { k: "invoices", label: "📋 发票查询" },
-        ].map(t => (
-          <button key={t.k} onClick={() => setTab(t.k)}
-            className={`px-4 py-2 text-sm font-medium rounded-t-lg transition
-              ${tab === t.k ? "bg-white border border-b-white -mb-px text-blue-600" : "text-gray-500 hover:text-gray-700"}`}
-          >{t.label}</button>
-        ))}
-      </div>
-
-      {/* Error */}
-      {error && <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700 whitespace-pre-wrap">{error}</div>}
-
-      {/* Tab: Submit */}
-      {tab === "submit" && (
-        <div className="bg-white rounded-xl border p-6 space-y-4">
-          <div className="grid md:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">供应商 TIN *</label>
-              <input value={form.supplierTin} onChange={e => setForm(f => ({ ...f, supplierTin: e.target.value }))}
-                className="w-full border rounded-lg px-3 py-2 text-sm" placeholder="C1234567890" />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">供应商名称 *</label>
-              <input value={form.supplierName} onChange={e => setForm(f => ({ ...f, supplierName: e.target.value }))}
-                className="w-full border rounded-lg px-3 py-2 text-sm" placeholder="供应商公司 Sdn Bhd" />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">购买方 TIN *（你的 TIN）</label>
-              <input value={form.buyerTin} onChange={e => setForm(f => ({ ...f, buyerTin: e.target.value }))}
-                className="w-full border rounded-lg px-3 py-2 text-sm" />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">购买方名称</label>
-              <input value={form.buyerName} onChange={e => setForm(f => ({ ...f, buyerName: e.target.value }))}
-                className="w-full border rounded-lg px-3 py-2 text-sm" />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">发票号</label>
-              <input value={form.invoiceNo} onChange={e => setForm(f => ({ ...f, invoiceNo: e.target.value }))}
-                className="w-full border rounded-lg px-3 py-2 text-sm" />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">开票日期</label>
-              <input type="date" value={form.issueDate} onChange={e => setForm(f => ({ ...f, issueDate: e.target.value }))}
-                className="w-full border rounded-lg px-3 py-2 text-sm" />
-            </div>
-          </div>
-
-          {/* Lines */}
+    <div className="min-h-screen bg-gradient-to-br from-gray-50 to-blue-50">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+        {/* 顶部 */}
+        <div className="flex items-center justify-between mb-6">
           <div>
-            <div className="flex items-center justify-between mb-2">
-              <label className="text-sm font-medium text-gray-700">发票行</label>
-              <button onClick={addLine} className="text-xs text-blue-600 hover:text-blue-800">+ 添加行</button>
-            </div>
-            <div className="space-y-2">
-              {form.lines.map((line, i) => (
-                <div key={i} className="flex gap-2 items-start">
-                  <input value={line.description} onChange={e => updLine(i, "description", e.target.value)}
-                    className="flex-1 border rounded px-2 py-1.5 text-sm" placeholder="描述" />
-                  <input type="number" value={line.quantity} onChange={e => updLine(i, "quantity", +e.target.value)}
-                    className="w-16 border rounded px-2 py-1.5 text-sm" placeholder="数量" />
-                  <input type="number" step="0.01" value={line.unitPrice} onChange={e => updLine(i, "unitPrice", +e.target.value)}
-                    className="w-24 border rounded px-2 py-1.5 text-sm" placeholder="单价" />
-                  <input type="number" step="0.01" value={line.taxRate} onChange={e => updLine(i, "taxRate", +e.target.value)}
-                    className="w-20 border rounded px-2 py-1.5 text-sm" placeholder="税率" />
-                  <span className="text-xs text-gray-400 self-center w-16 px-1">
-                    ¥{(line.quantity * line.unitPrice * (1 + line.taxRate)).toFixed(2)}
-                  </span>
-                  {form.lines.length > 1 && (
-                    <button onClick={() => delLine(i)} className="text-red-400 hover:text-red-600 text-sm px-1">✕</button>
-                  )}
-                </div>
-              ))}
-            </div>
+            <h1 className="text-2xl font-bold text-gray-900 tracking-tight">
+              <span className="text-blue-600">富贵</span> MyInvois
+            </h1>
+            <p className="text-sm text-gray-500 mt-0.5">马来西亚 LHDN 电子发票管理系统</p>
           </div>
-
-          <button onClick={submitInvoice} disabled={submitting || !configOk}
-            className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-gray-300 text-white rounded-lg py-2.5 font-medium transition">
-            {submitting ? "提交中..." : "提交到 MyInvois"}
-          </button>
-
-          {result && (
-            <div className="p-4 bg-green-50 border border-green-200 rounded-lg text-sm">
-              <p className="font-medium text-green-700 mb-1">✅ 提交成功</p>
-              <p className="text-gray-600">Submission ID: {result.submissionUID}</p>
-              {result.acceptedDocuments?.map(d => (
-                <p key={d.uuid} className="text-gray-500 text-xs mt-1">
-                  📄 {d.internalId} → {d.uuid}
-                </p>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* Tab: Tools */}
-      {tab === "tools" && (
-        <div className="space-y-4">
-          {/* Token Test */}
-          <div className="bg-white rounded-xl border p-6">
-            <h3 className="font-medium mb-3">🔑 Token 测试</h3>
-            <button onClick={testToken} className="bg-gray-800 hover:bg-gray-900 text-white rounded-lg px-4 py-2 text-sm">
-              获取 Token
-            </button>
-            {tokenInfo && (
-              <div className="mt-3 p-3 bg-gray-50 rounded text-sm space-y-1">
-                <p><span className="text-gray-500">Token:</span> <code className="text-xs">{tokenInfo.access_token}</code></p>
-                <p><span className="text-gray-500">有效期:</span> {tokenInfo.expires_in}s</p>
-                <p><span className="text-gray-500">Scope:</span> {tokenInfo.scope}</p>
-              </div>
-            )}
-          </div>
-
-          {/* TIN Verify */}
-          <div className="bg-white rounded-xl border p-6">
-            <h3 className="font-medium mb-3">✅ 验证 TIN</h3>
-            <div className="flex gap-2">
-              <input value={tinInput} onChange={e => setTinInput(e.target.value)}
-                className="flex-1 border rounded-lg px-3 py-2 text-sm" placeholder="输入 TIN (如 C1234567890)" />
-              <button onClick={verifyTin} className="bg-blue-600 hover:bg-blue-700 text-white rounded-lg px-4 py-2 text-sm">
-                验证
-              </button>
-            </div>
-            {tinInfo && (
-              <div className="mt-3 p-3 bg-green-50 rounded text-sm">
-                <p className="text-green-700 font-medium">✅ 有效</p>
-                <p className="text-gray-600 mt-1">TIN: {tinInfo.tin} | 名称: {tinInfo.name}</p>
-              </div>
+          <div className="flex items-center gap-3">
+            <span className={`px-3 py-1.5 rounded-lg text-xs font-medium border ${
+              configOk ? "bg-emerald-50 text-emerald-700 border-emerald-200" : "bg-red-50 text-red-700 border-red-200"
+            }`}>
+              {env === "prod" ? "● PRODUCTION" : "● SANDBOX"}
+            </span>
+            {!configOk && (
+              <span className="text-xs text-red-500">未配置</span>
             )}
           </div>
         </div>
-      )}
 
-      {/* Tab: Status */}
-      {tab === "status" && (
-        <div className="bg-white rounded-xl border p-6 space-y-4">
-          <h3 className="font-medium">📊 查询提交状态</h3>
-          <div className="flex gap-2">
-            <input value={pollId} onChange={e => setPollId(e.target.value)}
-              className="flex-1 border rounded-lg px-3 py-2 text-sm" placeholder="Submission UUID" />
-            <button onClick={pollStatus} className="bg-blue-600 hover:bg-blue-700 text-white rounded-lg px-4 py-2 text-sm">
-              查询
-            </button>
-          </div>
-          {pollResult && (
-            <div className="p-4 bg-gray-50 rounded-lg text-sm">
-              <pre className="whitespace-pre-wrap text-xs">{JSON.stringify(pollResult, null, 2)}</pre>
+        {/* 筛选区域 */}
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5 mb-5">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 mb-4">
+            <div>
+              <label className="block text-xs font-medium text-gray-500 mb-1.5">开始日期</label>
+              <input type="date" value={filters.dateFrom} onChange={e => setFilters(f => ({ ...f, dateFrom: e.target.value }))}
+                className="w-full border border-gray-200 rounded-xl px-3.5 py-2.5 text-sm focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 outline-none transition" />
             </div>
-          )}
-        </div>
-      )}
-
-      {/* Tab: Invoices */}
-      {tab === "invoices" && (
-        <div className="space-y-4">
-          {/* 查询条件 */}
-          <div className="bg-white rounded-xl border p-6 space-y-3">
-            <h3 className="font-medium">🔍 搜索条件</h3>
-            <div className="grid md:grid-cols-4 gap-3">
-              <select value={searchForm.status} onChange={e => setSearchForm(f => ({ ...f, status: e.target.value }))}
-                className="border rounded-lg px-3 py-2 text-sm">
+            <div>
+              <label className="block text-xs font-medium text-gray-500 mb-1.5">结束日期</label>
+              <input type="date" value={filters.dateTo} onChange={e => setFilters(f => ({ ...f, dateTo: e.target.value }))}
+                className="w-full border border-gray-200 rounded-xl px-3.5 py-2.5 text-sm focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 outline-none transition" />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-500 mb-1.5">状态</label>
+              <select value={filters.status} onChange={e => setFilters(f => ({ ...f, status: e.target.value }))}
+                className="w-full border border-gray-200 rounded-xl px-3.5 py-2.5 text-sm focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 outline-none transition bg-white">
                 <option value="">全部状态</option>
-                <option value="1">待验证</option>
-                <option value="2">有效</option>
-                <option value="3">无效</option>
-                <option value="4">已取消</option>
-              </select>
-              <input type="date" value={searchForm.dateFrom} onChange={e => setSearchForm(f => ({ ...f, dateFrom: e.target.value }))}
-                className="border rounded-lg px-3 py-2 text-sm" placeholder="开始日期" />
-              <input type="date" value={searchForm.dateTo} onChange={e => setSearchForm(f => ({ ...f, dateTo: e.target.value }))}
-                className="border rounded-lg px-3 py-2 text-sm" placeholder="结束日期" />
-              <select value={searchForm.direction} onChange={e => setSearchForm(f => ({ ...f, direction: e.target.value }))}
-                className="border rounded-lg px-3 py-2 text-sm">
-                <option value="">全部方向</option>
-                <option value="sender">已发出</option>
-                <option value="receiver">已接收</option>
+                <option value="Valid">有效</option>
+                <option value="Submitted">待验证</option>
+                <option value="Invalid">无效</option>
+                <option value="Cancelled">已取消</option>
               </select>
             </div>
-            <div className="flex gap-2">
-              <button onClick={async () => {
-                setDocLoading(true); setError(""); setRecentDocs(null);
-                try {
-                  const r = await fetch("/api/documents/search", {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify(searchForm),
-                  });
-                  const d = await r.json();
-                  if (d.error) return setError(d.error);
-                  setRecentDocs(d);
-                } finally { setDocLoading(false); }
-              }} disabled={docLoading}
-                className="bg-blue-600 hover:bg-blue-700 disabled:bg-gray-300 text-white rounded-lg px-4 py-2 text-sm">
-                {docLoading ? "搜索中..." : "🔍 搜索"}
-              </button>
-              <button onClick={async () => {
-                setDocLoading(true); setError(""); setRecentDocs(null);
-                try {
-                  const r = await fetch("/api/documents/recent", {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ pageSize: 20 }),
-                  });
-                  const d = await r.json();
-                  if (d.error) return setError(d.error);
-                  setRecentDocs(d);
-                } finally { setDocLoading(false); }
-              }} disabled={docLoading}
-                className="bg-gray-100 hover:bg-gray-200 disabled:bg-gray-50 text-gray-700 rounded-lg px-4 py-2 text-sm border">
-                📄 最近发票
+            <div>
+              <label className="block text-xs font-medium text-gray-500 mb-1.5">关键词搜索</label>
+              <input value={filters.keyword} onChange={e => setFilters(f => ({ ...f, keyword: e.target.value }))}
+                className="w-full border border-gray-200 rounded-xl px-3.5 py-2.5 text-sm focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 outline-none transition"
+                placeholder="发票号 / TIN / 名称" />
+            </div>
+            <div className="flex items-end">
+              <button onClick={() => loadDocs(1)} disabled={loading}
+                className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-blue-300 text-white rounded-xl py-2.5 text-sm font-medium transition shadow-sm flex items-center justify-center gap-2">
+                {loading ? (
+                  <><svg className="animate-spin h-4 w-4" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>查询中...</>
+                ) : "🔍 查询"}
               </button>
             </div>
           </div>
+        </div>
 
-          {/* 结果列表 */}
-          {recentDocs && (
-            <div className="bg-white rounded-xl border p-6">
-              <h3 className="font-medium mb-3">
-                查询结果 {recentDocs.metadata?.totalCount ? `(共 ${recentDocs.metadata.totalCount} 条)` : ""}
-              </h3>
-              {recentDocs.result?.length > 0 ? (
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="border-b text-left text-gray-500">
-                        <th className="pb-2 pr-3">发票号</th>
-                        <th className="pb-2 pr-3">类型</th>
-                        <th className="pb-2 pr-3">状态</th>
-                        <th className="pb-2 pr-3">日期</th>
-                        <th className="pb-2 pr-3">金额</th>
-                        <th className="pb-2">操作</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {recentDocs.result.map((doc, i) => (
-                        <tr key={i} className="border-b hover:bg-gray-50">
-                          <td className="py-2 pr-3 font-medium">{doc.internalId || doc.codeNumber || "-"}</td>
-                          <td className="py-2 pr-3">{doc.typeName || doc.documentType || "-"}</td>
-                          <td className="py-2 pr-3">
-                            <span className={`px-2 py-0.5 rounded-full text-xs ${
-                              doc.status === "Valid" ? "bg-green-100 text-green-700" :
-                              doc.status === "Submitted" ? "bg-yellow-100 text-yellow-700" :
-                              doc.status === "Invalid" ? "bg-red-100 text-red-700" :
-                              doc.status === "Cancelled" ? "bg-gray-100 text-gray-500" :
-                              "bg-gray-100 text-gray-500"
+        {/* 错误 */}
+        {error && (
+          <div className="mb-5 p-4 bg-red-50 border border-red-200 rounded-2xl text-sm text-red-700">
+            {error}
+          </div>
+        )}
+
+        {/* 数据表格 */}
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+          {/* 表头 */}
+          <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
+            <h2 className="text-base font-semibold text-gray-800">发票管理</h2>
+            {docs && (
+              <span className="text-xs text-gray-400">
+                共 {docs.metadata?.totalCount || 0} 条记录
+              </span>
+            )}
+          </div>
+
+          {!docs && !loading && (
+            <div className="py-20 text-center text-gray-400">
+              <div className="text-4xl mb-3">📋</div>
+              <p className="text-sm">点击「查询」加载发票列表</p>
+            </div>
+          )}
+
+          {loading && !docs && (
+            <div className="py-20 text-center text-gray-400">
+              <svg className="animate-spin h-8 w-8 mx-auto mb-3 text-blue-500" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none"/>
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
+              </svg>
+              <p className="text-sm">加载中...</p>
+            </div>
+          )}
+
+          {docs && docs.result?.length > 0 && (
+            <>
+              {/* 表格 */}
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-gray-50 bg-gray-50/50">
+                      <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3.5">方向</th>
+                      <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-4 py-3.5">UUID</th>
+                      <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-4 py-3.5">Date & Time</th>
+                      <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-4 py-3.5">e-Invoice Code</th>
+                      <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-4 py-3.5">Buyer</th>
+                      <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-4 py-3.5">Supplier</th>
+                      <th className="text-right text-xs font-semibold text-gray-500 uppercase tracking-wider px-4 py-3.5">Total Amount</th>
+                      <th className="text-center text-xs font-semibold text-gray-500 uppercase tracking-wider px-4 py-3.5">Status</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-50">
+                    {docs.result.map((doc, i) => {
+                      // 判断方向：TIN 匹配判断
+                      const isSent = doc.issuerTIN === doc.supplierTIN;
+                      return (
+                        <tr key={i} className="hover:bg-blue-50/30 transition text-sm">
+                          <td className="px-5 py-3.5">
+                            <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium ${
+                              isSent ? "bg-blue-50 text-blue-600" : "bg-purple-50 text-purple-600"
                             }`}>
-                              {doc.status}
+                              {isSent ? "↑ 发出" : "↓ 接收"}
                             </span>
                           </td>
-                          <td className="py-2 pr-3 text-gray-500">{(doc.dateTimeIssued || doc.createdDate || "").substring(0, 10) || "-"}</td>
-                          <td className="py-2 pr-3">{doc.totalPayableAmount ? `MYR ${doc.totalPayableAmount}` : doc.total ? `MYR ${doc.total}` : "-"}</td>
-                          <td className="py-2">
-                            <button onClick={async () => {
-                              setDocUuid(doc.uuid); setDocDetail(null);
-                              const r = await fetch("/api/documents/get", {
-                                method: "POST",
-                                headers: { "Content-Type": "application/json" },
-                                body: JSON.stringify({ uuid: doc.uuid }),
-                              });
-                              const d = await r.json();
-                              if (d.error) return setError(d.error);
-                              setDocDetail(d);
-                            }} className="text-blue-600 hover:text-blue-800 text-xs">查看</button>
+                          <td className="px-4 py-3.5">
+                            <code className="text-xs text-gray-400 font-mono">{doc.uuid?.substring(0, 14)}...</code>
+                          </td>
+                          <td className="px-4 py-3.5 text-gray-700 whitespace-nowrap text-xs">
+                            {fmtDate(doc.dateTimeReceived || doc.dateTimeIssued)}
+                          </td>
+                          <td className="px-4 py-3.5 font-medium text-gray-800">
+                            {doc.internalId || doc.codeNumber || "-"}
+                          </td>
+                          <td className="px-4 py-3.5">
+                            <div className="text-gray-800">{doc.buyerName || doc.receiverName || "-"}</div>
+                            <div className="text-xs text-gray-400 mt-0.5">{doc.buyerTIN || doc.receiverTIN || ""}</div>
+                          </td>
+                          <td className="px-4 py-3.5">
+                            <div className="text-gray-800">{doc.supplierName || "-"}</div>
+                            <div className="text-xs text-gray-400 mt-0.5">{doc.supplierTIN || ""}</div>
+                          </td>
+                          <td className="px-4 py-3.5 text-right font-medium text-gray-800 whitespace-nowrap">
+                            {fmt(doc.totalPayableAmount || doc.total)}
+                          </td>
+                          <td className="px-4 py-3.5 text-center">
+                            <span className={`inline-block px-2.5 py-1 rounded-lg text-xs font-medium border ${statusColor(doc.status)}`}>
+                              {statusLabel(doc.status)}
+                            </span>
                           </td>
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* 分页 */}
+              <div className="px-5 py-4 border-t border-gray-100 flex items-center justify-between">
+                <span className="text-xs text-gray-400">
+                  第 {page} / {totalPages} 页
+                </span>
+                <div className="flex gap-1.5">
+                  <button onClick={() => loadDocs(1)} disabled={page <= 1}
+                    className="px-3 py-1.5 rounded-lg text-xs border border-gray-200 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition">
+                    首页
+                  </button>
+                  <button onClick={() => loadDocs(page - 1)} disabled={page <= 1}
+                    className="px-3 py-1.5 rounded-lg text-xs border border-gray-200 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition">
+                    上一页
+                  </button>
+                  {/* 页码按钮 */}
+                  {Array.from({ length: Math.min(totalPages, 7) }, (_, i) => {
+                    let p;
+                    if (totalPages <= 7) {
+                      p = i + 1;
+                    } else if (page <= 4) {
+                      p = i + 1;
+                    } else if (page >= totalPages - 3) {
+                      p = totalPages - 6 + i;
+                    } else {
+                      p = page - 3 + i;
+                    }
+                    return (
+                      <button key={p} onClick={() => loadDocs(p)}
+                        className={`w-8 h-8 rounded-lg text-xs font-medium transition ${
+                          p === page
+                            ? "bg-blue-600 text-white shadow-sm"
+                            : "border border-gray-200 hover:bg-gray-50 text-gray-600"
+                        }`}>
+                        {p}
+                      </button>
+                    );
+                  })}
+                  <button onClick={() => loadDocs(page + 1)} disabled={page >= totalPages}
+                    className="px-3 py-1.5 rounded-lg text-xs border border-gray-200 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition">
+                    下一页
+                  </button>
+                  <button onClick={() => loadDocs(totalPages)} disabled={page >= totalPages}
+                    className="px-3 py-1.5 rounded-lg text-xs border border-gray-200 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition">
+                    末页
+                  </button>
                 </div>
-              ) : (
-                <p className="text-gray-400 text-sm">暂无数据</p>
-              )}
-            </div>
+              </div>
+            </>
           )}
 
-          {/* UUID 查询 */}
-          <div className="bg-white rounded-xl border p-6">
-            <h3 className="font-medium mb-3">🔗 按 UUID 查询文档详情</h3>
-            <div className="flex gap-2 mb-3">
-              <input value={docUuid} onChange={e => setDocUuid(e.target.value)}
-                className="flex-1 border rounded-lg px-3 py-2 text-sm font-mono" placeholder="文档 UUID" />
-              <button onClick={async () => {
-                setDocDetail(null); setError("");
-                const r = await fetch("/api/documents/get", {
-                  method: "POST",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({ uuid: docUuid }),
-                });
-                const d = await r.json();
-                if (d.error) return setError(d.error);
-                setDocDetail(d);
-              }} className="bg-blue-600 hover:bg-blue-700 text-white rounded-lg px-4 py-2 text-sm">查询</button>
+          {docs && docs.result?.length === 0 && (
+            <div className="py-20 text-center text-gray-400">
+              <div className="text-4xl mb-3">📭</div>
+              <p className="text-sm">暂无数据，试试调整筛选条件</p>
             </div>
-            {docDetail && (
-              <div className="p-3 bg-gray-50 rounded-lg">
-                <pre className="whitespace-pre-wrap text-xs max-h-96 overflow-y-auto">{JSON.stringify(docDetail, null, 2)}</pre>
-              </div>
-            )}
-          </div>
+          )}
         </div>
-      )}
 
-      {/* Footer */}
-      <div className="mt-8 text-center text-xs text-gray-400">
-        MyInvois SDK v1.0 · {env === "sandbox" ? "Sandbox" : "Production"} · {configOk ? "已配置" : "请在 Vercel 环境变量中配置 MYINVOIS_CLIENT_ID / MYINVOIS_CLIENT_SECRET / MYINVOIS_TIN"}
+        {/* 底部 */}
+        <div className="mt-6 text-center text-xs text-gray-400">
+          MyInvois · {env === "prod" ? "Production" : "Sandbox"}
+        </div>
       </div>
     </div>
   );
