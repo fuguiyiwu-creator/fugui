@@ -1,8 +1,6 @@
 "use client";
 import { useState, useEffect } from "react";
 
-const STATUS_MAP = { 1: "待验证", 2: "有效", 3: "无效", 4: "已取消" };
-
 export default function Home() {
   const [tab, setTab] = useState("submit");
   const [env, setEnv] = useState("sandbox");
@@ -347,9 +345,9 @@ export default function Home() {
           {recentDocs && (
             <div className="bg-white rounded-xl border p-6">
               <h3 className="font-medium mb-3">
-                查询结果 {recentDocs.totalCount ? `(共 ${recentDocs.totalCount} 条)` : ""}
+                查询结果 {recentDocs.metadata?.totalCount ? `(共 ${recentDocs.metadata.totalCount} 条)` : ""}
               </h3>
-              {recentDocs.resultList?.length > 0 ? (
+              {recentDocs.result?.length > 0 ? (
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm">
                     <thead>
@@ -363,22 +361,23 @@ export default function Home() {
                       </tr>
                     </thead>
                     <tbody>
-                      {recentDocs.resultList.map((doc, i) => (
+                      {recentDocs.result.map((doc, i) => (
                         <tr key={i} className="border-b hover:bg-gray-50">
-                          <td className="py-2 pr-3 font-medium">{doc.codeNumber || "-"}</td>
-                          <td className="py-2 pr-3">{doc.documentType || "-"}</td>
+                          <td className="py-2 pr-3 font-medium">{doc.internalId || doc.codeNumber || "-"}</td>
+                          <td className="py-2 pr-3">{doc.typeName || doc.documentType || "-"}</td>
                           <td className="py-2 pr-3">
                             <span className={`px-2 py-0.5 rounded-full text-xs ${
-                              doc.status === "2" ? "bg-green-100 text-green-700" :
-                              doc.status === "3" ? "bg-red-100 text-red-700" :
-                              doc.status === "4" ? "bg-gray-100 text-gray-500" :
-                              "bg-yellow-100 text-yellow-700"
+                              doc.status === "Valid" ? "bg-green-100 text-green-700" :
+                              doc.status === "Submitted" ? "bg-yellow-100 text-yellow-700" :
+                              doc.status === "Invalid" ? "bg-red-100 text-red-700" :
+                              doc.status === "Cancelled" ? "bg-gray-100 text-gray-500" :
+                              "bg-gray-100 text-gray-500"
                             }`}>
-                              {STATUS_MAP[doc.status] || doc.status}
+                              {doc.status}
                             </span>
                           </td>
-                          <td className="py-2 pr-3 text-gray-500">{doc.issueDate || doc.createdDate?.substring(0, 10) || "-"}</td>
-                          <td className="py-2 pr-3">{doc.totalPayableAmount ? `MYR ${doc.totalPayableAmount}` : "-"}</td>
+                          <td className="py-2 pr-3 text-gray-500">{(doc.dateTimeIssued || doc.createdDate || "").substring(0, 10) || "-"}</td>
+                          <td className="py-2 pr-3">{doc.totalPayableAmount ? `MYR ${doc.totalPayableAmount}` : doc.total ? `MYR ${doc.total}` : "-"}</td>
                           <td className="py-2">
                             <button onClick={async () => {
                               setDocUuid(doc.uuid); setDocDetail(null);
