@@ -16,6 +16,13 @@ export default function Home() {
   const [pollId, setPollId] = useState("");
   const [pollResult, setPollResult] = useState(null);
 
+  // ── 发票查询 ──
+  const [recentDocs, setRecentDocs] = useState(null);
+  const [docLoading, setDocLoading] = useState(false);
+  const [searchForm, setSearchForm] = useState({ status: "", dateFrom: "", dateTo: "", tin: "", direction: "" });
+  const [docDetail, setDocDetail] = useState(null);
+  const [docUuid, setDocUuid] = useState("");
+
   // ── 表单数据 ──
   const [form, setForm] = useState({
     supplierTin: "",
@@ -122,6 +129,7 @@ export default function Home() {
           { k: "submit", label: "📄 提交发票" },
           { k: "tools", label: "🔧 检测工具" },
           { k: "status", label: "📊 查询状态" },
+          { k: "invoices", label: "📋 发票查询" },
         ].map(t => (
           <button key={t.k} onClick={() => setTab(t.k)}
             className={`px-4 py-2 text-sm font-medium rounded-t-lg transition
@@ -270,6 +278,155 @@ export default function Home() {
               <pre className="whitespace-pre-wrap text-xs">{JSON.stringify(pollResult, null, 2)}</pre>
             </div>
           )}
+        </div>
+      )}
+
+      {/* Tab: Invoices */}
+      {tab === "invoices" && (
+        <div className="space-y-4">
+          {/* 查询条件 */}
+          <div className="bg-white rounded-xl border p-6 space-y-3">
+            <h3 className="font-medium">🔍 搜索条件</h3>
+            <div className="grid md:grid-cols-4 gap-3">
+              <select value={searchForm.status} onChange={e => setSearchForm(f => ({ ...f, status: e.target.value }))}
+                className="border rounded-lg px-3 py-2 text-sm">
+                <option value="">全部状态</option>
+                <option value="1">待验证</option>
+                <option value="2">有效</option>
+                <option value="3">无效</option>
+                <option value="4">已取消</option>
+              </select>
+              <input type="date" value={searchForm.dateFrom} onChange={e => setSearchForm(f => ({ ...f, dateFrom: e.target.value }))}
+                className="border rounded-lg px-3 py-2 text-sm" placeholder="开始日期" />
+              <input type="date" value={searchForm.dateTo} onChange={e => setSearchForm(f => ({ ...f, dateTo: e.target.value }))}
+                className="border rounded-lg px-3 py-2 text-sm" placeholder="结束日期" />
+              <select value={searchForm.direction} onChange={e => setSearchForm(f => ({ ...f, direction: e.target.value }))}
+                className="border rounded-lg px-3 py-2 text-sm">
+                <option value="">全部方向</option>
+                <option value="sender">已发出</option>
+                <option value="receiver">已接收</option>
+              </select>
+            </div>
+            <div className="flex gap-2">
+              <button onClick={async () => {
+                setDocLoading(true); setError(""); setRecentDocs(null);
+                try {
+                  const r = await fetch("/api/documents/search", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify(searchForm),
+                  });
+                  const d = await r.json();
+                  if (d.error) return setError(d.error);
+                  setRecentDocs(d);
+                } finally { setDocLoading(false); }
+              }} disabled={docLoading}
+                className="bg-blue-600 hover:bg-blue-700 disabled:bg-gray-300 text-white rounded-lg px-4 py-2 text-sm">
+                {docLoading ? "搜索中..." : "🔍 搜索"}
+              </button>
+              <button onClick={async () => {
+                setDocLoading(true); setError(""); setRecentDocs(null);
+                try {
+                  const r = await fetch("/api/documents/recent", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ pageSize: 20 }),
+                  });
+                  const d = await r.json();
+                  if (d.error) return setError(d.error);
+                  setRecentDocs(d);
+                } finally { setDocLoading(false); }
+              }} disabled={docLoading}
+                className="bg-gray-100 hover:bg-gray-200 disabled:bg-gray-50 text-gray-700 rounded-lg px-4 py-2 text-sm border">
+                📄 最近发票
+              </button>
+            </div>
+          </div>
+
+          {/* 结果列表 */}
+          {recentDocs && (
+            <div className="bg-white rounded-xl border p-6">
+              <h3 className="font-medium mb-3">
+                查询结果 {recentDocs.totalCount ? `(共 ${recentDocs.totalCount} 条)` : ""}
+              </h3>
+              {recentDocs.resultList?.length > 0 ? (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b text-left text-gray-500">
+                        <th className="pb-2 pr-3">发票号</th>
+                        <th className="pb-2 pr-3">类型</th>
+                        <th className="pb-2 pr-3">状态</th>
+                        <th className="pb-2 pr-3">日期</th>
+                        <th className="pb-2 pr-3">金额</th>
+                        <th className="pb-2">操作</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {recentDocs.resultList.map((doc, i) => (
+                        <tr key={i} className="border-b hover:bg-gray-50">
+                          <td className="py-2 pr-3 font-medium">{doc.codeNumber || "-"}</td>
+                          <td className="py-2 pr-3">{doc.documentType || "-"}</td>
+                          <td className="py-2 pr-3">
+                            <span className={`px-2 py-0.5 rounded-full text-xs ${
+                              doc.status === "2" ? "bg-green-100 text-green-700" :
+                              doc.status === "3" ? "bg-red-100 text-red-700" :
+                              doc.status === "4" ? "bg-gray-100 text-gray-500" :
+                              "bg-yellow-100 text-yellow-700"
+                            }`}>
+                              {STATUS_MAP[doc.status] || doc.status}
+                            </span>
+                          </td>
+                          <td className="py-2 pr-3 text-gray-500">{doc.issueDate || doc.createdDate?.substring(0, 10) || "-"}</td>
+                          <td className="py-2 pr-3">{doc.totalPayableAmount ? `MYR ${doc.totalPayableAmount}` : "-"}</td>
+                          <td className="py-2">
+                            <button onClick={async () => {
+                              setDocUuid(doc.uuid); setDocDetail(null);
+                              const r = await fetch("/api/documents/get", {
+                                method: "POST",
+                                headers: { "Content-Type": "application/json" },
+                                body: JSON.stringify({ uuid: doc.uuid }),
+                              });
+                              const d = await r.json();
+                              if (d.error) return setError(d.error);
+                              setDocDetail(d);
+                            }} className="text-blue-600 hover:text-blue-800 text-xs">查看</button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <p className="text-gray-400 text-sm">暂无数据</p>
+              )}
+            </div>
+          )}
+
+          {/* UUID 查询 */}
+          <div className="bg-white rounded-xl border p-6">
+            <h3 className="font-medium mb-3">🔗 按 UUID 查询文档详情</h3>
+            <div className="flex gap-2 mb-3">
+              <input value={docUuid} onChange={e => setDocUuid(e.target.value)}
+                className="flex-1 border rounded-lg px-3 py-2 text-sm font-mono" placeholder="文档 UUID" />
+              <button onClick={async () => {
+                setDocDetail(null); setError("");
+                const r = await fetch("/api/documents/get", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ uuid: docUuid }),
+                });
+                const d = await r.json();
+                if (d.error) return setError(d.error);
+                setDocDetail(d);
+              }} className="bg-blue-600 hover:bg-blue-700 text-white rounded-lg px-4 py-2 text-sm">查询</button>
+            </div>
+            {docDetail && (
+              <div className="p-3 bg-gray-50 rounded-lg">
+                <pre className="whitespace-pre-wrap text-xs max-h-96 overflow-y-auto">{JSON.stringify(docDetail, null, 2)}</pre>
+              </div>
+            )}
+          </div>
         </div>
       )}
 

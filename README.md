@@ -58,10 +58,15 @@ python -m myinvois_sdk
 
 | 变量 | 值 |
 |------|-----|
-| `MYINVOIS_CLIENT_ID` | `4d22546d-b2c4-420b-b542-893ab9cbebbb` |
-| `MYINVOIS_CLIENT_SECRET` | 用 **Secret 1** (`36d6db2f...`)，轮换时切 Secret 2 |
-| `MYINVOIS_TIN` | `C60122406100` |
-| `MYINVOIS_ENV` | `prod`（测试）/ `prod`（正式） |
-
-> 本地测试：复制 `config/settings_local.py` 填入真实值
 > 注意：`config/settings_local.py` 已加入 `.gitignore`，不会提交到仓库
+
+## 环境变量
+
+| 变量 | 说明 |
+|------|------|
+| `MYINVOIS_CLIENT_ID` | 你的 Client ID |
+| `MYINVOIS_CLIENT_SECRET` | 你的 Client Secret |
+| `MYINVOIS_TIN` | 你的税号 |
+| `MYINVOIS_ENV` | `sandbox` 或 `prod` |
+
+> 凭据通过 `.env` 文件或 Vercel 环境变量注入，不入库。
