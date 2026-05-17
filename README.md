@@ -36,11 +36,17 @@ python -m myinvois_sdk
 
 ```
 ├── myinvois_sdk/
-│   ├── __init__.py      # SDK 核心
+│   └── __init__.py       # SDK 核心
 ├── config/
 │   └── settings.py       # 配置（不入库）
 ├── examples/
 │   └── auto_submit.py    # 自开发票示例
+├── web/                  # Vercel 前端
+│   ├── src/app/
+│   │   ├── page.js       # 主面板
+│   │   └── api/          # API 代理
+│   ├── package.json
+│   └── vercel.json
 └── README.md
 ```
 
